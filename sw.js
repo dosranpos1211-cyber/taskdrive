@@ -1,7 +1,7 @@
 // タスクドライブ ランチャーの service worker
 // ランチャー本体（このフォルダのファイル）だけをキャッシュする。ネット優先で、つながらないときだけキャッシュを使う。
 // ツール本体（iframe の中）は別オリジンなので、ここでは一切扱わない。
-var CACHE = 'taskdrive-launcher-v1';
+var CACHE = 'taskdrive-launcher-v2';
 var SHELL = [
   './',
   './index.html',

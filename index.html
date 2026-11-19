@@ -68,6 +68,71 @@
     <p id="loading-msg">読み込み中…</p>
     <a id="fallback" target="_blank" rel="noopener">ブラウザで開く</a>
   </div>
+  <script id="token-keeper">
+    // ログイン状態の預かり（v3.8.1）
+    // スマホでは埋め込んだツールの中の保存が起動のたびに消えることがあるため、ログイン状態（トークン）を
+    // このページ（ホーム画面から開く入口）の保存領域に預かり、ツールに頼まれたら返す。
+    // 答える相手：GAS の画面（*-script.googleusercontent.com）で、しかもこのページの iframe の中にいるものだけ。
+    var TaskDriveTokenKeeper = (function () {
+      var SANDBOX_ORIGIN = /^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/;
+      var TOKEN_FORMAT = /^[0-9a-f]{64}$/;   // src/Auth.js の newToken_ と同じ形（16 進 64 文字）
+      var NONCE_FORMAT = /^[0-9a-f]{8,64}$/;
+      var KEY = 'taskdrive.token';
+
+      function readToken(storage) {
+        try {
+          var t = storage.getItem(KEY);
+          return typeof t === 'string' && TOKEN_FORMAT.test(t) ? t : '';
+        } catch (e) {
+          return '';
+        }
+      }
+
+      // 届いたメッセージを処理し、返事が要るときは返事を返す（要らない・受け付けないときは null）
+      function handle(data, origin, storage) {
+        if (typeof origin !== 'string' || !SANDBOX_ORIGIN.test(origin)) return null;
+        if (!data || typeof data !== 'object' || typeof data.type !== 'string' || data.type.indexOf('taskdrive:') !== 0) return null;
+        if (data.type === 'taskdrive:getToken') {
+          if (typeof data.nonce !== 'string' || !NONCE_FORMAT.test(data.nonce)) return null;
+          return { type: 'taskdrive:token', token: readToken(storage), nonce: data.nonce };
+        }
+        if (data.type === 'taskdrive:setToken') {
+          var t = data.token;
+          try {
+            if (t === '' || t == null) storage.removeItem(KEY);
+            else if (typeof t === 'string' && TOKEN_FORMAT.test(t)) storage.setItem(KEY, t);
+          } catch (e) { /* 保存できない環境では預からない */ }
+        }
+        return null;
+      }
+
+      // source が root（このページの iframe）の中の画面か（ほかのサイトが開いた窓などには答えない）
+      function isInside(root, source, depth) {
+        if (!root || !source) return false;
+        if (root === source) return true;
+        if (depth <= 0) return false;
+        try {
+          for (var i = 0; i < root.length; i++) {
+            if (isInside(root[i], source, depth - 1)) return true;
+          }
+        } catch (e) { /* 読めない枠は対象外 */ }
+        return false;
+      }
+
+      return { handle: handle, isInside: isInside, SANDBOX_ORIGIN: SANDBOX_ORIGIN, TOKEN_FORMAT: TOKEN_FORMAT };
+    })();
+
+    window.addEventListener('message', function (event) {
+      // ほかのサイトに埋め込まれているときは何もしない
+      if (window.top !== window) return;
+      var frame = document.getElementById('app');
+      if (!frame || !TaskDriveTokenKeeper.isInside(frame.contentWindow, event.source, 5)) return;
+      var storage = null;
+      try { storage = window.localStorage; } catch (e) { /* 使えない */ }
+      var reply = TaskDriveTokenKeeper.handle(event.data, event.origin, storage);
+      if (reply) event.source.postMessage(reply, event.origin);
+    });
+  </script>
   <script>
     (function () {
       // ツールの URL（変わったらここだけ書き換える）
